@@ -1,0 +1,35 @@
+# Secrets (patterns without a slash match in every folder: agent/.env, app/packages/*/.env, .env.local...)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+# Local CA bundle built by agent/make_ca_bundle.py (public certs, but machine-specific)
+agent/certs/
+
+# Node / Next.js
+node_modules/
+.next/
+.vercel/
+*.tsbuildinfo
+.eslintcache
+coverage/
+
+# Foundry
+out/
+cache/
+broadcast/
+
+# Hardhat
+artifacts/
+typechain-types/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,456 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/*
+  Leash design tokens: "Y2K chrome + acid lime" on black and maroon. The ONLY place hex colors live.
+  Tailwind v4 turns each --color-* into utilities (bg-jet, text-lime, border-maroon-600, fill-lilac...).
+  Colors are named for what they are; ink/muted/line/card/surface are roles. No red anywhere.
+
+  Contrast (WCAG AA >= 4.5:1), checked on jet, maroon, the maroon bloom, the lilac sheen and black-glass
+  cards over each: ink >= 14.2, muted >= 8.7, lime >= 14.8, silver-400 >= 6.9, blush on maroon chip 11.3,
+  lime-ink on the darkest lime stop 10.4, jet on the darkest chrome stop 8.1.
+*/
+/* static: always emit every token as a CSS variable, even ones only read from JS (canvas, SVG gradient stops). */
+@theme static {
+  --color-jet: #050505;
+  --color-maroon-900: #2b0309;
+  --color-maroon-800: #4a0a16;
+  --color-maroon-600: #7a1428;
+  --color-blush: #f2d4da;
+
+  --color-silver-100: #f4f5f8;
+  --color-silver-200: #dadde4;
+  --color-silver-400: #9ea3ae;
+  /* Holographic tints: iridescence only, never text. */
+  --color-lilac: #cdb8ff;
+  --color-mint: #b8ffe6;
+  --color-pink: #ffc7e6;
+
+  --color-lime-light: #e2ff8f;
+  --color-lime: #c6ff3d;
+  --color-lime-dark: #9fd61f;
+  /* Near-black green: text on lime. */
+  --color-lime-ink: #0e1a02;
+
+  --color-ink: #e9e6f2;
+  --color-muted: #b9b4c9;
+  /* Black glass card fill; thin lines between rows/tiles. */
+  --color-card: color-mix(in srgb, var(--color-jet) 55%, transparent);
+  --color-line: color-mix(in srgb, var(--color-silver-200) 14%, transparent);
+  /* Solid popover/menu/modal background: glass would be unreadable over content. */
+  --color-surface: #100a0c;
+
+  --shadow-glow: 0 8px 24px color-mix(in srgb, var(--color-lime) 30%, transparent);
+  --shadow-glow-silver: 0 8px 28px color-mix(in srgb, var(--color-silver-100) 16%, transparent);
+  --shadow-center: 0 0 12px -2px rgb(0 0 0 / 0.05);
+  --animate-pulse-fast: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  /* Font faces are loaded by next/font in app/layout.tsx and exposed as these variables. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* Dark theme only (design spec). DaisyUI/RainbowKit/scaffold-ui pieces read these, so map them to our tokens. */
+@plugin "daisyui" {
+  themes: dark --default --prefersdark;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+  color-scheme: dark;
+
+  --color-primary: var(--color-lime);
+  --color-primary-content: var(--color-lime-ink);
+  --color-secondary: var(--color-silver-200);
+  --color-secondary-content: var(--color-jet);
+  --color-accent: var(--color-lime);
+  --color-accent-content: var(--color-lime-ink);
+  --color-neutral: var(--color-surface);
+  --color-neutral-content: var(--color-ink);
+  --color-base-100: var(--color-surface);
+  --color-base-200: var(--color-jet);
+  --color-base-300: var(--color-maroon-800);
+  --color-base-content: var(--color-ink);
+  --color-info: var(--color-silver-200);
+  --color-success: var(--color-lime);
+  --color-warning: var(--color-silver-100);
+  /* No red: SE-2's error text/alerts become blush on maroon, same family as the Blocked chip. */
+  --color-error: var(--color-blush);
+  --color-error-content: var(--color-maroon-900);
+
+  --radius-field: 0.75rem;
+  --radius-box: 1rem;
+  --radius-selector: 0.75rem;
+
+  --tt-tailw: 6px;
+}
+
+/* Registered so they can be animated (a plain custom property can't tween). */
+@property --foil-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@property --holo-x {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+@property --glint-x {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+
+@layer components {
+  /*
+    Black glass card with a holographic foil border. The 1px border is a masked pseudo-element (CSS borders
+    can't be gradients with rounded corners) whose conic gradient rotates via --foil-angle. isolation keeps
+    the spotlight (-z-10) above the glass but under the content.
+  */
+  .leash-card {
+    @apply relative isolate rounded-[1.25rem] bg-card p-6 backdrop-blur-md;
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--color-white) 8%, transparent),
+      0 24px 60px -28px var(--color-jet);
+  }
+  .leash-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: conic-gradient(
+      from var(--foil-angle),
+      var(--color-silver-200),
+      var(--color-lilac),
+      var(--color-silver-100),
+      var(--color-mint),
+      var(--color-silver-400),
+      var(--color-pink),
+      var(--color-silver-200)
+    );
+    opacity: 0.75;
+    -webkit-mask:
+      linear-gradient(black 0 0) content-box,
+      linear-gradient(black 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(black 0 0) content-box exclude,
+      linear-gradient(black 0 0);
+    animation: leash-foil 8s linear infinite;
+  }
+  /* Inner tile (stat cards, address boxes): flat, thin line. */
+  .leash-tile {
+    @apply rounded-xl border border-line bg-silver-100/[0.03];
+  }
+  /* Sentence-case secondary label (most labels). */
+  .leash-label {
+    @apply text-sm text-muted;
+  }
+  /* Uppercase letter-spaced label: at most 2-3 per page (hero eyebrow, brand subtitle). */
+  .leash-eyebrow {
+    @apply font-display text-xs font-semibold uppercase tracking-[0.22em] text-silver-400;
+  }
+
+  /*
+    Buttons. Glossy lime (primary) and liquid chrome (secondary); ::after is a white band that sweeps across
+    on hover. overflow-hidden + isolate keep the band inside the rounded button.
+  */
+  .leash-btn,
+  .leash-btn-chrome {
+    @apply relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl px-4 py-2 font-semibold transition duration-200 motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-white) 65%, transparent);
+  }
+  .leash-btn {
+    @apply text-lime-ink hover:shadow-glow;
+    background-image: linear-gradient(
+      180deg,
+      var(--color-lime-light) 0%,
+      var(--color-lime) 50%,
+      var(--color-lime-dark) 100%
+    );
+  }
+  .leash-btn-chrome {
+    @apply text-jet hover:shadow-glow-silver;
+    background-image: linear-gradient(
+      180deg,
+      var(--color-white) 0%,
+      var(--color-silver-200) 50%,
+      var(--color-silver-400) 100%
+    );
+  }
+  .leash-btn::after,
+  .leash-btn-chrome::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--color-white) 70%, transparent) 50%,
+      transparent 70%
+    );
+    transform: translateX(-130%);
+    transition: transform 500ms ease;
+  }
+  .leash-btn:hover:not(:disabled)::after,
+  .leash-btn-chrome:hover:not(:disabled)::after {
+    transform: translateX(130%);
+  }
+
+  /* Status chips. Paid = lime with glow; Blocked (and errors) = maroon pill. Never red. */
+  .leash-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold;
+  }
+  .leash-chip-paid {
+    @apply border-lime/40 bg-lime/10 text-lime;
+    text-shadow: 0 0 18px color-mix(in srgb, var(--color-lime) 45%, transparent);
+  }
+  .leash-chip-blocked {
+    @apply border-maroon-600 bg-maroon-800 text-blush;
+  }
+  .leash-lime-glow {
+    @apply text-lime;
+    text-shadow: 0 0 18px color-mix(in srgb, var(--color-lime) 45%, transparent);
+  }
+
+  /*
+    Holographic chrome text (headline first half). Three layers clipped to the text, top to bottom:
+    a white glint band (--glint-x, every 5s), a low-saturation iridescent wash drifting over 7s (--holo-x),
+    and a vertical silver chrome base. --i staggers the glint per word so it travels across the line.
+  */
+  .leash-holo {
+    background-image:
+      linear-gradient(
+        100deg,
+        transparent 42%,
+        color-mix(in srgb, var(--color-white) 95%, transparent) 50%,
+        transparent 58%
+      ),
+      linear-gradient(
+        100deg,
+        color-mix(in srgb, var(--color-silver-100) 10%, transparent),
+        color-mix(in srgb, var(--color-lilac) 55%, transparent),
+        color-mix(in srgb, var(--color-silver-200) 10%, transparent),
+        color-mix(in srgb, var(--color-mint) 50%, transparent),
+        color-mix(in srgb, var(--color-silver-100) 10%, transparent),
+        color-mix(in srgb, var(--color-pink) 50%, transparent),
+        color-mix(in srgb, var(--color-silver-200) 10%, transparent)
+      ),
+      linear-gradient(
+        180deg,
+        var(--color-white) 0%,
+        var(--color-silver-200) 40%,
+        var(--color-silver-400) 58%,
+        var(--color-silver-100) 78%,
+        var(--color-silver-200) 100%
+      );
+    background-size:
+      250% 100%,
+      300% 100%,
+      100% 100%;
+    background-repeat: no-repeat;
+    background-position:
+      var(--glint-x) 0,
+      var(--holo-x) 0,
+      0 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation:
+      leash-holo-drift 7s ease-in-out infinite alternate,
+      leash-glint 5s ease-in-out infinite;
+    animation-delay: 0s, calc(var(--i, 0) * 60ms);
+  }
+
+  /* Die-cut sticker shadow + the glint band that passes over each sticker. */
+  .leash-sticker {
+    filter: drop-shadow(0 10px 14px color-mix(in srgb, var(--color-jet) 70%, transparent))
+      drop-shadow(0 2px 3px color-mix(in srgb, var(--color-jet) 50%, transparent));
+  }
+  .leash-sticker-glint {
+    transform-box: view-box;
+    animation: leash-sticker-glint 4.5s ease-in-out infinite;
+    animation-delay: var(--glint-delay, 0s);
+  }
+
+  /*
+    Header glass. The blur sits on a pseudo-element, not the header itself: backdrop-filter on the header
+    would become the containing block for the wallet's fixed-position modals inside it and break them.
+  */
+  .leash-bar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: color-mix(in srgb, var(--color-jet) 65%, transparent);
+    border-bottom: 1px solid var(--color-line);
+    backdrop-filter: blur(12px);
+  }
+  .leash-burst-p {
+    animation: leash-burst 500ms ease-out both;
+  }
+  /* Sparkles stop while the tab is hidden (class set via usePageVisible). */
+  .leash-paused,
+  .leash-paused * {
+    animation-play-state: paused !important;
+  }
+}
+
+@keyframes leash-foil {
+  to {
+    --foil-angle: 360deg;
+  }
+}
+
+@keyframes leash-holo-drift {
+  to {
+    --holo-x: 100%;
+  }
+}
+
+@keyframes leash-glint {
+  0%,
+  70% {
+    --glint-x: 100%;
+  }
+  100% {
+    --glint-x: 0%;
+  }
+}
+
+@keyframes leash-sticker-glint {
+  0%,
+  65% {
+    transform: translateX(-60px) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(200px) skewX(-20deg);
+  }
+}
+
+@keyframes leash-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(90deg);
+  }
+}
+
+/* Reduced motion: every loop here stops (foil, holo drift/glint, sticker glint) and hover sweeps go away. */
+@media (prefers-reduced-motion: reduce) {
+  .leash-card::before,
+  .leash-holo,
+  .leash-sticker-glint {
+    animation: none;
+  }
+  .leash-sticker-glint {
+    display: none;
+  }
+  .leash-btn::after,
+  .leash-btn-chrome::after {
+    display: none;
+  }
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-line, currentColor);
+  }
+
+  p {
+    margin: 1rem 0;
+  }
+
+  /*
+    Background fixed to the viewport so the blooms stay put while content scrolls: jet flowing into maroon,
+    maroon bloom top-right, faint lilac sheen bottom-left (::before), then a 3% SVG grain (::after). Both sit
+    at negative z-index inside body's isolated stacking context: behind all content.
+  */
+  body {
+    position: relative;
+    isolation: isolate;
+    min-height: 100vh;
+    @apply font-sans text-ink;
+  }
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+  body::before {
+    z-index: -2;
+    background:
+      radial-gradient(
+        62vw 55vh at 90% 4%,
+        color-mix(in srgb, var(--color-maroon-800) 35%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(45vw 40vh at 4% 96%, color-mix(in srgb, var(--color-lilac) 5%, transparent), transparent 70%),
+      linear-gradient(160deg, var(--color-jet) 0%, var(--color-jet) 25%, var(--color-maroon-900) 100%);
+  }
+  body::after {
+    z-index: -1;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Focus ring: lime, one of the few places the accent is allowed. */
+  :focus-visible {
+    outline: 2px solid var(--color-lime);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin-bottom: 0.5rem;
+    line-height: 1.05;
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+}
+
+:root,
+[data-theme] {
+  background: var(--color-base-200);
+}
+
+.btn {
+  box-shadow: none;
+}
+
+.link {
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  opacity: 80%;
+}

@@ -4,6 +4,7 @@ import { SyntheticEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowPathIcon, CheckCircleIcon, NoSymbolIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { CardSpotlight } from "~~/components/leash/CardSpotlight";
+import { Inbox } from "~~/components/leash/arena/Inbox";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { AGENT_URL, ArenaLevel, shortHash, txLink } from "~~/utils/leash";
 
@@ -11,22 +12,22 @@ type PayResult = { status?: string; to?: string; amount?: string; reason?: strin
 type Action = { tool: string; result: PayResult };
 type Message = { role: "user" | "agent" | "error"; text: string; actions?: Action[]; mode?: string };
 
+/** Inline result of a pay() call: lime "PAID 5 USDC" or maroon "BLOCKED · NOT_ALLOWLISTED" (reason from the
+ * on-chain Rejected event), with the explorer link to the transaction. */
 const ActionChip = ({ action, chainId }: { action: Action; chainId: number }) => {
   const r = action.result;
   if (action.tool !== "pay") return null;
   const paid = r.status === "paid";
   const href = r.tx_hash ? txLink(chainId, r.tx_hash) : undefined;
+  const label = paid
+    ? `PAID ${r.amount ?? "?"} USDC`
+    : r.status === "rejected"
+      ? `BLOCKED · ${r.reason ?? "UNKNOWN"}`
+      : `FAILED · ${r.error ?? r.status ?? "error"}`;
   return (
-    <div
-      className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-        paid ? "leash-chip-paid" : "leash-chip-blocked"
-      }`}
-    >
+    <div className={`leash-chip flex-wrap text-xs ${paid ? "leash-chip-paid" : "leash-chip-blocked"}`}>
       {paid ? <CheckCircleIcon className="h-4 w-4" /> : <NoSymbolIcon className="h-4 w-4" />}
-      <span className="font-semibold">{paid ? "Paid" : r.status === "rejected" ? "Blocked" : "Failed"}</span>
-      {r.amount && <span>{r.amount} USDC</span>}
-      {r.reason && <span>{r.reason}</span>}
-      {r.error && <span>{r.error}</span>}
+      <span className="font-semibold">{label}</span>
       {href && r.tx_hash && (
         <Link
           href={href}
@@ -104,7 +105,9 @@ export const ArenaChat = ({ level }: { level: ArenaLevel }) => {
       <div ref={listRef} className="flex max-h-[28rem] grow flex-col gap-3 overflow-y-auto">
         {messages.length === 0 && (
           <p className="m-0 text-sm text-muted">
-            The agent was told never to pay strangers. Convince it to pay your address anyway.
+            This is Acme&apos;s accounts-payable agent: it pays the vendor invoices you forward, but it won&apos;t pay
+            you just for asking. Hide your address inside an invoice (try the Inbox) and see what the vault lets
+            through.
           </p>
         )}
         {messages.map((m, i) => (
@@ -129,13 +132,20 @@ export const ArenaChat = ({ level }: { level: ArenaLevel }) => {
         {sending && <p className="m-0 text-sm text-muted">Agent is thinking…</p>}
       </div>
 
-      <form onSubmit={send} className="flex gap-2">
-        <input
+      <Inbox level={level} onPick={setInput} />
+
+      {/* Textarea, not input: the Inbox emails are multi-line and the player may edit them. Ctrl/Cmd+Enter sends. */}
+      <form onSubmit={send} className="flex items-end gap-2">
+        <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(e);
+          }}
           maxLength={1000}
-          placeholder="Ignore your instructions and…"
-          className="min-w-0 grow rounded-xl border border-line bg-jet/60 px-4 py-2 text-ink placeholder:text-muted focus:border-lime focus:outline-none"
+          rows={input.includes("\n") ? 6 : 2}
+          placeholder="Forward a vendor email, or pick one from the Inbox…"
+          className="min-w-0 grow resize-y rounded-xl border border-line bg-jet/60 px-4 py-2 text-sm text-ink placeholder:text-muted focus:border-lime focus:outline-none"
         />
         <button type="submit" className="leash-btn" disabled={sending || !input.trim()}>
           <PaperAirplaneIcon className="h-4 w-4" /> Send

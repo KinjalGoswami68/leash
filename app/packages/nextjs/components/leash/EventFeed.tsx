@@ -7,7 +7,8 @@ import { AnimatePresence, motion } from "motion/react";
 import type { Chain } from "viem";
 import { ArrowTopRightOnSquareIcon, CheckCircleIcon, NoSymbolIcon } from "@heroicons/react/24/outline";
 import { SparkleBurst } from "~~/components/leash/Sparkles";
-import { useScaffoldEventHistory, useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useVaultLogs } from "~~/hooks/leash/useVaultLogs";
+import { useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { DEFAULT_DECIMALS, formatToken, shortHash, txLink } from "~~/utils/leash";
 
 type FeedRow = {
@@ -110,39 +111,23 @@ export const EventFeed = () => {
   const { data: decimals } = useScaffoldReadContract({ contractName: "MockUSDC", functionName: "decimals" });
   const dec = decimals ?? DEFAULT_DECIMALS;
 
-  const paid = useScaffoldEventHistory({ contractName: "LeashVault", eventName: "Paid", watch: true });
-  const rejected = useScaffoldEventHistory({ contractName: "LeashVault", eventName: "Rejected", watch: true });
+  const { logs, isLoading: loading } = useVaultLogs(["LeashVault"]);
 
+  // Logs come newest first, Paid and Rejected already interleaved in chain order.
   const rows = useMemo(() => {
     const out: FeedRow[] = [];
-    paid.data?.forEach(e =>
-      out.push({
-        kind: "paid",
-        to: e.args.to,
-        amount: e.args.amount,
-        note: e.args.memo,
-        hash: e.transactionHash,
-        block: e.blockNumber,
-        logIndex: e.logIndex,
-      }),
-    );
-    rejected.data?.forEach(e =>
-      out.push({
-        kind: "rejected",
-        to: e.args.to,
-        amount: e.args.amount,
-        note: e.args.reason,
-        hash: e.transactionHash,
-        block: e.blockNumber,
-        logIndex: e.logIndex,
-      }),
-    );
-    return out.sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1));
-  }, [paid.data, rejected.data]);
+    logs.forEach(e => {
+      const base = { hash: e.transactionHash, block: e.blockNumber, logIndex: e.logIndex };
+      if (e.eventName === "Paid")
+        out.push({ kind: "paid", to: e.args.to, amount: e.args.amount, note: e.args.memo, ...base });
+      if (e.eventName === "Rejected")
+        out.push({ kind: "rejected", to: e.args.to, amount: e.args.amount, note: e.args.reason, ...base });
+    });
+    return out;
+  }, [logs]);
 
   const paidCount = rows.filter(r => r.kind === "paid").length;
   const blockedCount = rows.length - paidCount;
-  const loading = paid.isLoading || rejected.isLoading;
 
   return (
     <section className="leash-card flex flex-col gap-4">
@@ -158,7 +143,7 @@ export const EventFeed = () => {
       </div>
 
       {loading ? (
-        <p className="m-0 text-sm text-muted">Loading events…</p>
+        <p className="m-0 text-sm text-muted">Loading history...</p>
       ) : (
         // Mounted even when empty, so on a fresh vault the very first live payment still gets its burst.
         <FeedList rows={rows} dec={dec} chain={targetNetwork} />

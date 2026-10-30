@@ -31,6 +31,7 @@ VAULT_ABI = [
 ERC20_ABI = [{"type": "function", "name": n, "stateMutability": "view", "inputs": [],
               "outputs": [{"name": "", "type": t}]} for n, t in [("decimals", "uint8"), ("symbol", "string")]]
 
+OUT_OF_GAS = "Agent is out of test gas"
 MEMO_MAX = 140  # memo is stored in event data; capping it bounds gas per call.
 
 # One agent key signs for every vault (main + 3 arena levels) = one nonce sequence, so one lock for all clients.
@@ -40,7 +41,7 @@ _SEND_LOCK = threading.Lock()
 class VaultClient:
     def __init__(self, vault_address: str, rpc_url: str = config.RPC_URL, private_key: str = config.AGENT_PRIVATE_KEY):
         if not private_key:
-            raise RuntimeError("AGENT_PRIVATE_KEY is not set in agent/.env")
+            raise RuntimeError("AGENT_PRIVATE_KEY is not set (agent/.env or Space secrets)")
         if not Web3.is_address(vault_address):
             raise RuntimeError("VAULT_ADDRESS is missing or not a valid address")
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -53,6 +54,9 @@ class VaultClient:
 
     def _fmt(self, units: int) -> str:
         return str(Decimal(units) / (Decimal(10) ** self.decimals))
+
+    def has_gas(self) -> bool:
+        return self.w3.eth.get_balance(self.account.address) >= Web3.to_wei(config.MIN_AGENT_ETH, "ether")
 
     def get_balance(self) -> dict:
         f = self.vault.functions
@@ -78,6 +82,9 @@ class VaultClient:
             return {"status": "error", "error": "invalid amount"}
         if units < 0 or units >= 2**256:
             return {"status": "error", "error": "invalid amount"}
+
+        if not self.has_gas():
+            return {"status": "error", "error": OUT_OF_GAS}
 
         to = Web3.to_checksum_address(to)
         memo = str(memo or "")[:MEMO_MAX]
@@ -111,6 +118,6 @@ def get_client(level: int = 0) -> VaultClient:
         if level not in _clients:
             address = config.VAULT_ADDRESS if level == 0 else config.ARENA_VAULTS.get(level, "")
             if level and not address:
-                raise RuntimeError(f"ARENA_L{level}_ADDRESS is not set in agent/.env")
+                raise RuntimeError(f"ARENA_L{level}_ADDRESS is not set (agent/.env or Space secrets)")
             _clients[level] = VaultClient(address)
         return _clients[level]

@@ -8,14 +8,20 @@ Run (agent folder, venv active, agent server running):
   python demo_chat.py balance    -> "What's in the vault?"
   python demo_chat.py "any text" -> free text
   python demo_chat.py reset      -> clear this stage session (also resets the scripted-mode step counter)
+
+Against the public Space instead of localhost: set AGENT_URL (e.g. https://<user>-leash-agent.hf.space) and
+DEMO_TOKEN (same value as the Space secret) in agent/.env or the shell; the token is sent as X-Demo-Token.
 """
+import os
 import sys
 
 import requests
 
 import config
 
-AGENT = "http://127.0.0.1:8000"
+AGENT = os.getenv("AGENT_URL", "http://127.0.0.1:8000").rstrip("/")
+# Only needed when the server runs with PUBLIC_MODE=true; harmless otherwise.
+HEADERS = {"X-Demo-Token": config.DEMO_TOKEN} if config.DEMO_TOKEN else {}
 SESSION = "stage"
 
 PITCH = {
@@ -44,20 +50,25 @@ def show(message: str) -> None:
 
 
 def main() -> None:
+    # Model replies contain characters like U+202F; on a redirected Windows stdout (cp1252) printing them crashed.
+    sys.stdout.reconfigure(errors="replace")
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     arg = " ".join(sys.argv[1:])
     if arg == "reset":
-        requests.post(f"{AGENT}/reset/{SESSION}", timeout=10).raise_for_status()
+        requests.post(f"{AGENT}/reset/{SESSION}", headers=HEADERS, timeout=10).raise_for_status()
         print("Session reset.")
         return
 
     message = PITCH.get(arg, arg)
     show(message)
     try:
-        r = requests.post(f"{AGENT}/chat", json={"session_id": SESSION, "message": message}, timeout=180)
+        r = requests.post(f"{AGENT}/chat", json={"session_id": SESSION, "message": message}, headers=HEADERS,
+                          timeout=180)
     except requests.ConnectionError:
-        sys.exit("Agent server not reachable on port 8000. Start it (DEMO.md, terminal 2).")
+        sys.exit(f"Agent server not reachable at {AGENT}. Start it (DEMO.md, terminal 2).")
+    if r.status_code == 403:
+        sys.exit("Server is in PUBLIC_MODE: set DEMO_TOKEN to the Space's DEMO_TOKEN secret.")
     r.raise_for_status()
     data = r.json()
     try:

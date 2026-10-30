@@ -12,7 +12,8 @@ import { BorderTrail } from "~~/components/motion-primitives/border-trail";
 import { SlidingNumber } from "~~/components/motion-primitives/sliding-number";
 import { TextShimmer } from "~~/components/motion-primitives/text-shimmer";
 import { Tilt } from "~~/components/motion-primitives/tilt";
-import { useScaffoldEventHistory, useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useVaultLogs } from "~~/hooks/leash/useVaultLogs";
+import { useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { DEFAULT_DECIMALS, formatToken } from "~~/utils/leash";
 
 const statVariants = {
@@ -69,15 +70,16 @@ export const RulesPanel = () => {
   const { data: owner } = useScaffoldReadContract({ ...vault, functionName: "owner" });
 
   // The contract keeps the allowlist as a mapping (not enumerable), so rebuild the list from AllowlistUpdated events.
-  const { data: allowEvents } = useScaffoldEventHistory({ ...vault, eventName: "AllowlistUpdated", watch: true });
+  // Same cache entry as the event feed (same vault), so this costs no extra RPC calls.
+  const { logs, isLoading: historyLoading } = useVaultLogs(["LeashVault"]);
   const allowlist = useMemo(() => {
     const state = new Map<string, boolean>();
     // Events arrive newest first; replay oldest first so the latest change wins.
-    [...(allowEvents ?? [])].reverse().forEach(e => {
-      if (e.args.account) state.set(e.args.account, Boolean(e.args.allowed));
+    [...logs].reverse().forEach(e => {
+      if (e.eventName === "AllowlistUpdated" && e.args.account) state.set(e.args.account, Boolean(e.args.allowed));
     });
     return [...state].filter(([, ok]) => ok).map(([account]) => account);
-  }, [allowEvents]);
+  }, [logs]);
 
   // Trail, shimmer, spotlight and tilt aren't transform animations, so MotionConfig doesn't stop them: skip here.
   const reduceMotion = !!useReducedMotion();
@@ -163,6 +165,8 @@ export const RulesPanel = () => {
           </div>
           {!allowlistEnabled ? (
             <p className="m-0 text-sm text-muted">Any recipient is allowed.</p>
+          ) : historyLoading ? (
+            <p className="m-0 text-sm text-muted">Loading history...</p>
           ) : allowlist.length === 0 ? (
             <p className="m-0 text-sm text-muted">No recipients allowed yet.</p>
           ) : (

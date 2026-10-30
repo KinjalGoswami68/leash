@@ -1,0 +1,8 @@
+# Never bake secrets or local machine state into the image.
+.env
+.env.*
+.venv/
+venv/
+certs/
+__pycache__/
+*.pyc

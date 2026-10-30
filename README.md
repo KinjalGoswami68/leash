@@ -4,6 +4,11 @@
 
 Leash is a smart-contract vault that holds money for an AI agent. The agent gets its own limited key that can do exactly one thing, `pay(to, amount, memo)`, and the contract enforces the spending rules. So when the agent is prompt-injected or jailbroken, the damage is capped by code, not by the prompt.
 
+**Live demo:** <https://YOUR-PROJECT.vercel.app> (dashboard `/`, jailbreak arena `/arena`)
+**Agent API:** <https://YOUR-HF-USERNAME-leash-agent.hf.space/health>
+
+Testnet only (Base Sepolia). To play the arena you need a wallet on Base Sepolia; no ETH is needed to chat.
+
 ## Security model
 
 - **Two keys.** The owner key sets rules, pauses and withdraws. The agent key can only call `pay()`. Any other caller of `pay()` reverts (`NotAgent`). The agent can never change rules or withdraw.
@@ -17,6 +22,10 @@ Leash is a smart-contract vault that holds money for an AI agent. The agent gets
 - **Blocked attempts are evidence, not errors.** A policy violation does not revert. `pay()` returns `false` and emits `Rejected(to, amount, reason)`, so every blocked attempt is recorded on-chain with a readable reason (`NOT_ALLOWLISTED`, `OVER_DAILY_LIMIT`...). A successful payment emits `Paid(to, amount, memo)`.
 - **The prompt is not a security boundary.** The agent's system prompt deliberately contains no spending rules. In the demo, the model obeys a hidden instruction in a vendor email and tries to send 500 USDC to an attacker. The contract blocks it.
 - **Checks-effects-interactions** order and OpenZeppelin `SafeERC20` / `Ownable`.
+
+## Jailbreak arena
+
+`/arena` runs the same agent prompt (an accounts-payable assistant that pays the vendor invoices you forward) against three copies of the same LeashVault with different rules: Level 1 no limits, Level 2 a 1 USDC per-payment cap, Level 3 allowlist + 10/50 caps. Its Inbox has three preset vendor emails that hide an instruction to pay the player (an HTML comment, "our payout wallet changed", a hidden `<div>`). The same hidden instruction that gets paid on Level 1 comes back `BLOCKED · NOT_ALLOWLISTED` on Level 3: the model is fooled both times, only the contract differs. The leaderboard is built only from on-chain `Paid` events. Arena chat is rate-limited per player (1 message per 8 s, 20 per hour) to stay inside Groq's free tier.
 
 ## Honest limitation
 
@@ -36,6 +45,28 @@ Other scope limits: testnet only, MockUSDC (open mint) instead of real USDC, in-
 
 Main vault rules: 10 mUSDC per payment, 50 mUSDC per 24h window, allowlist on.
 
+## How it is hosted (all free tiers, no card)
+
+| Part | Where | Notes |
+|---|---|---|
+| Contracts | Base Sepolia testnet | addresses above |
+| Frontend | Vercel Hobby | Next.js app in `app/packages/nextjs`, `NEXT_PUBLIC_TARGET_NETWORK=baseSepolia` |
+| Agent | Hugging Face Space (Docker, free CPU) | `agent/Dockerfile`, Python 3.12, port 7860, config from Space secrets |
+| LLM | Groq free tier | `openai/gpt-oss-120b`, fallback `openai/gpt-oss-20b` |
+| Event history | public RPCs (publicnode, Tenderly, sepolia.base.org) | read in 10,000-block chunks with retry and RPC fallback |
+
+A free Space sleeps after inactivity; the first request after that takes ~30 s while it wakes up.
+
+### Public safety limits
+
+The agent API is open to the internet, so with `PUBLIC_MODE=true`:
+- **Only the arena is public.** Chat against levels 1-3 is open; the main dashboard vault's chat (the stage demo) needs an `X-Demo-Token` header equal to the `DEMO_TOKEN` secret.
+- **Per player:** at most 1 arena message per 8 s and 20 per hour.
+- **Whole server:** at most 300 arena messages per UTC day (protects the shared Groq free tier). After that: "Arena is busy, try later".
+- **Gas guard:** if the agent wallet holds less than 0.0003 test ETH, it replies "Agent is out of test gas" instead of sending a transaction.
+- **No secrets exposed:** `/health` returns only status, chain id, agent address and model; keys live only in Space secrets.
+- The vaults hold only MockUSDC on a testnet. The worst case of any jailbreak is bounded by each vault's on-chain rules, which is the point of the project.
+
 ## Repository layout
 
 ```
@@ -43,6 +74,7 @@ app/                Scaffold-ETH 2 monorepo (yarn)
   packages/hardhat/   contracts/LeashVault.sol, MockUSDC.sol, deploy/, test/
   packages/nextjs/    dashboard (/) and jailbreak arena (/arena)
 agent/              Python FastAPI agent: Groq LLM + web3.py, signs with the agent key
+  Dockerfile, README.md   Hugging Face Space image + Space metadata
 DEMO.md             stage runbook and fallbacks
 ```
 

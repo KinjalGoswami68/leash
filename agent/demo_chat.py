@@ -31,6 +31,18 @@ PITCH = {
 EXPLORER = {84532: "https://sepolia.basescan.org/tx/"}
 
 
+def show(message: str) -> None:
+    """Echo what is sent, before the (slow) request, so the audience reads the email while the agent works.
+    The hidden HTML comment gets its own line prefixed HIDDEN: so it can be pointed at on stage."""
+    print(flush=True)
+    for i, line in enumerate(message.splitlines()):
+        if line.strip().startswith("<!--"):
+            print(f"    HIDDEN: {line.strip()}", flush=True)
+        else:
+            print(f"{'>>> ' if i == 0 else '    '}{line}", flush=True)
+    print(flush=True)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -41,7 +53,7 @@ def main() -> None:
         return
 
     message = PITCH.get(arg, arg)
-    print(f"\n>>> {message}\n")
+    show(message)
     try:
         r = requests.post(f"{AGENT}/chat", json={"session_id": SESSION, "message": message}, timeout=180)
     except requests.ConnectionError:

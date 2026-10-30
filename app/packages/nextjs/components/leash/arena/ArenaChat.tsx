@@ -44,8 +44,8 @@ const ActionChip = ({ action, chainId }: { action: Action; chainId: number }) =>
 
 export const ArenaChat = ({ level }: { level: ArenaLevel }) => {
   const { targetNetwork } = useTargetNetwork();
-  // One id per browser tab; the backend keeps a separate history per level under it. Not an identity: the
-  // leaderboard never trusts the chat, only on-chain Paid events.
+  // One id per browser tab, used for the backend's per-player rate limit. Not an identity: the leaderboard never
+  // trusts the chat, only on-chain Paid events.
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [chats, setChats] = useState<Record<number, Message[]>>({});
   const [input, setInput] = useState("");
@@ -64,6 +64,11 @@ export const ArenaChat = ({ level }: { level: ArenaLevel }) => {
     const text = input.trim();
     if (!text || sending) return;
     const lvl = level.level;
+    // The agent may run serverless with no memory between requests, so the last 4 turns travel with each message.
+    const history = messages
+      .filter(m => m.role !== "error" && m.text)
+      .slice(-8)
+      .map(m => ({ role: m.role === "agent" ? "assistant" : "user", content: m.text.slice(0, 2000) }));
     push(lvl, { role: "user", text });
     setInput("");
     setSending(true);
@@ -71,7 +76,7 @@ export const ArenaChat = ({ level }: { level: ArenaLevel }) => {
       const res = await fetch(`${AGENT_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, message: text, level: lvl }),
+        body: JSON.stringify({ session_id: sessionId, message: text, level: lvl, history }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${res.status}`);

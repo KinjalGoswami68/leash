@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "main.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{.venv/**,certs/**,**/__pycache__/**,Dockerfile,preflight.py,smoke_test.py,jailbreak_dryrun.py,demo_chat.py,make_ca_bundle.py}"
+    }
+  }
+}

@@ -49,7 +49,7 @@ def _client() -> groq.Groq:
         raise LLMUnavailable("GROQ_API_KEY not set")
     if _groq is None:
         # SDK retries are off so our own backoff + fallback decides what happens on 429.
-        _groq = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0, timeout=30)
+        _groq = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0, timeout=config.GROQ_TIMEOUT_S)
     return _groq
 
 
@@ -59,10 +59,12 @@ def model_order(first: str) -> tuple[str, ...]:
     return (first, *others)
 
 
-def _complete(messages: list, models: tuple[str, ...]) -> tuple[object, str]:
+def _complete(messages: list, models: tuple[str, ...], deadline: float | None = None) -> tuple[object, str]:
     client = _client()
     for model in models:
         for attempt in range(len(BACKOFF_SECONDS) + 1):
+            if deadline and time.monotonic() > deadline:
+                raise LLMUnavailable("time budget")  # serverless: answer before the platform kills the request
             try:
                 resp = client.chat.completions.create(
                     model=model, messages=messages, tools=TOOLS, tool_choice="auto", max_tokens=config.MAX_TOKENS,
@@ -87,11 +89,12 @@ def chat(
 ) -> dict:
     messages = [{"role": "system", "content": system_prompt}, *history, {"role": "user", "content": user_msg}]
     models = model_order(first_model)
+    deadline = time.monotonic() + config.CHAT_BUDGET_S if config.CHAT_BUDGET_S else None
     actions: list[dict] = []
     model = None
     try:
         for _ in range(MAX_TOOL_ROUNDS):
-            msg, model = _complete(messages, models)
+            msg, model = _complete(messages, models, deadline)
             if not msg.tool_calls:
                 return {"reply": msg.content or "", "actions": actions, "mode": f"llm:{model}"}
             messages.append({

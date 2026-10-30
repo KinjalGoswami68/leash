@@ -1,10 +1,13 @@
 """Leash agent API. Run: uvicorn main:app --port 8000 (from the agent folder, venv active).
-Public hosting: Dockerfile (Hugging Face Space, port 7860) with PUBLIC_MODE=true, see README.md."""
+Public hosting: Vercel Python runtime (this file's `app` is the zero-config entrypoint, vercel.json sets maxDuration)
+or the Dockerfile. On Vercel, process memory can reset between requests: everything kept in memory below
+(sessions, per-player limits, daily cap) is best-effort there. Gas check and contract rules are always enforced."""
 import hmac
 import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,16 +28,26 @@ _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
 
 
+class HistoryMsg(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=2000)
+
+
 class ChatIn(BaseModel):
     session_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=1000)
     level: int | None = Field(default=None, ge=1, le=3)  # set = arena chat against that level's vault
+    # Sent by the browser so chats keep context on serverless, where server memory may be gone by the next
+    # request. Not trusted for anything: a player can fake past turns, but the vault's rules still apply to the
+    # pay() call itself, which is the point of the project.
+    history: list[HistoryMsg] | None = Field(default=None, max_length=2 * 4)
 
 
 ARENA_BUSY = "The arena agent is rate-limited right now. Wait a minute and try again."
 
 # Groq free tier is 30 requests/min and 1,000/day for the whole key, and one arena message can use up to 4 model
 # calls. Per player session: at most 1 arena message per 8s and 20 per hour, refused before any Groq call.
+# Best-effort: kept in process memory, and a session id is just a random string the browser picks.
 ARENA_MIN_GAP_S = 8
 ARENA_MAX_PER_HOUR = 20
 ARENA_SLOW_DOWN = "Slow down, try again in a few seconds."
@@ -54,7 +67,8 @@ def _arena_allowed(session_id: str) -> bool:
 
 
 # Per-session limits alone don't protect the shared Groq key: anyone can mint new session ids. This is the hard cap
-# for the whole server. In memory, so a Space restart resets it (acceptable: restarts are rare and manual).
+# for the whole server. In memory: per process, so it resets on restart and, on Vercel, each concurrent instance
+# counts on its own (best-effort). Groq's own 1,000 requests/day on the free key is the hard ceiling behind it.
 ARENA_DAILY_BUSY = "Arena is busy, try later."
 _arena_day = {"day": None, "count": 0}
 
@@ -120,6 +134,8 @@ def chat(body: ChatIn, x_demo_token: str | None = Header(default=None)):
         return {"reply": OUT_OF_GAS, "actions": [], "mode": "no-gas"}
     # Separate history per level, so a jailbreak built up on L1 isn't silently carried into L3.
     s = _session(f"{level}:{body.session_id}")
+    if body.history is not None:
+        s["history"] = [m.model_dump() for m in body.history][-2 * HISTORY_TURNS:]
     prompt = llm.ARENA_PROMPT if level else llm.SYSTEM_PROMPT
 
     result = None

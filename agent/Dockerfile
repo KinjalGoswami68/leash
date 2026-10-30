@@ -1,4 +1,5 @@
-# Leash agent for a Hugging Face Docker Space (free CPU). All config comes from Space secrets/variables.
+# Alternative host (not used for the live demo, which runs on Vercel via vercel.json): any Docker host, e.g. a
+# Hugging Face Docker Space. All config comes from environment variables.
 # 3.12, not the 3.14 used locally: the slim image is well tested and every dependency ships a 3.12 Linux wheel.
 FROM python:3.12-slim
 

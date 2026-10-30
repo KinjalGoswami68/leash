@@ -1,0 +1,6 @@
+# Only matters for CLI uploads (git deploys never contain these: they are git-ignored). Never ship secrets.
+.env
+.env.*
+.venv/
+certs/
+__pycache__/

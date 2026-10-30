@@ -1,9 +1,11 @@
 """web3.py client for LeashVault. The agent key can only call pay(); every rule lives in the contract."""
 import threading
+import time
 from decimal import Decimal, InvalidOperation
 
 from eth_account import Account
 from web3 import Web3
+from web3.exceptions import Web3RPCError
 from web3.logs import DISCARD
 
 import config
@@ -89,14 +91,8 @@ class VaultClient:
         to = Web3.to_checksum_address(to)
         memo = str(memo or "")[:MEMO_MAX]
         with _SEND_LOCK:
-            tx = self.vault.functions.pay(to, units, memo).build_transaction({
-                "from": self.account.address,
-                "nonce": self.w3.eth.get_transaction_count(self.account.address, "pending"),
-                "chainId": self.chain_id,
-            })
-            signed = self.account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            tx_hash = self._send_pay(to, units, memo)
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=config.TX_TIMEOUT_S)
 
         result = {"to": to, "amount": self._fmt(units), "tx_hash": "0x" + receipt.transactionHash.hex().removeprefix("0x")}
         if receipt.status != 1:
@@ -106,6 +102,24 @@ class VaultClient:
         rejected = self.vault.events.Rejected().process_receipt(receipt, errors=DISCARD)
         reason = rejected[0]["args"]["reason"] if rejected else "UNKNOWN"
         return {**result, "status": "rejected", "reason": reason}
+
+
+    def _send_pay(self, to: str, units: int, memo: str):
+        # The lock only covers this process. On Vercel two function instances can read the same pending nonce at
+        # once; the loser gets a nonce error, so re-read the nonce and resend (best-effort, 3 tries).
+        for attempt in range(3):
+            tx = self.vault.functions.pay(to, units, memo).build_transaction({
+                "from": self.account.address,
+                "nonce": self.w3.eth.get_transaction_count(self.account.address, "pending"),
+                "chainId": self.chain_id,
+            })
+            try:
+                return self.w3.eth.send_raw_transaction(self.account.sign_transaction(tx).raw_transaction)
+            except Web3RPCError as e:
+                msg = str(e).lower()
+                if attempt == 2 or not any(k in msg for k in ("nonce", "underpriced", "already known")):
+                    raise
+                time.sleep(1 + attempt)
 
 
 _clients: dict[int, VaultClient] = {}

@@ -35,6 +35,13 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "").strip() or "openai/gpt-oss-20b"
 # Arena chats try this model first, then the other one on 429/errors. Switchable without code changes, e.g.
 # to a model that is easier to jailbreak live (see DEMO.md).
 ARENA_MODEL = os.getenv("ARENA_MODEL", "").strip() or PRIMARY_MODEL
+# Vercel sets VERCEL=1 in every function, and a request is killed at maxDuration (60 s, vercel.json). Budget:
+# no new model call starts after CHAT_BUDGET_S, each Groq call times out at GROQ_TIMEOUT_S and a receipt wait at
+# TX_TIMEOUT_S, so the worst case (25 + 12 + 15 s + RPC reads) still ends before 60 s. Locally: no budget.
+ON_VERCEL = bool(os.getenv("VERCEL"))
+CHAT_BUDGET_S = float(os.getenv("CHAT_BUDGET_S", "25" if ON_VERCEL else "0")) or None
+GROQ_TIMEOUT_S = 12 if ON_VERCEL else 30
+TX_TIMEOUT_S = int(os.getenv("TX_TIMEOUT_S", "15" if ON_VERCEL else "120"))
 MAX_TOKENS = 400  # Groq free tier is 8k tokens/min; small replies keep a demo inside it.
 
 # Public demo addresses used by scripted mode (Hardhat #2 = allowlisted vendor, #4 = not allowlisted).
